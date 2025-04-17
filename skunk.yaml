@@ -1,0 +1,3 @@
+stacksPath: fixtures/stacks/*.yaml
+catalogDir: fixtures/catalog
+logLevel: debug

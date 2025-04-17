@@ -1,0 +1,25 @@
+vpc-defaults: &vpc-defaults
+  enabled: true
+  name: vpc
+  assign_generated_ipv6_cidr_block: false
+  dns_hostnames_enabled: true
+  dns_support_enabled: true
+  internet_gateway_enabled: true
+  nat_gateway_enabled: true
+  nat_instance_enabled: false
+  vpc_flow_logs_enabled: true
+  vpc_flow_logs_traffic_type: ALL
+  vpc_flow_logs_log_destination_type: cloud-watch-logs
+  availability_zones:
+    - us-east-1a
+    - us-east-1b
+    - us-east-1c
+  public_subnets_enabled: true
+  public_subnets_additional_tags:
+    subnet_type: public
+  private_subnets_enabled: true
+  private_subnets_additional_tags:
+    subnet_type: private
+  intra_subnets_enabled: true
+  intra_subnets_additional_tags:
+    subnet_type: intra

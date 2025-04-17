@@ -1,0 +1,3 @@
+vpc-overrides: &vpc-overrides
+  enabled: false
+  name: dead-vpc

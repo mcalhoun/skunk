@@ -1,0 +1,5 @@
+secondary-region: &secondary-region
+  region: us-west-1
+
+secondary-region-short: &secondary-region-short
+  region-short: usw1

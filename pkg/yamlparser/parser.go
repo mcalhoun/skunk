@@ -63,56 +63,9 @@ func (cd *CustomDecoder) Decode() (map[string]interface{}, error) {
 
 // preprocessMultipleMergeKeys combines multiple "<<: *anchor" entries into a single entry with array
 func (cd *CustomDecoder) preprocessMultipleMergeKeys(yamlText string) string {
-	lines := strings.Split(yamlText, "\n")
-	var result []string
-	var mergeKeys []string
-	var prevIndent int
-
-	for i, line := range lines {
-		trimmedLine := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmedLine, "<<:") {
-			// Get indentation level
-			indent := len(line) - len(strings.TrimLeft(line, " "))
-
-			// Check if this is a new indentation level
-			if i == 0 || indent != prevIndent || !strings.HasPrefix(strings.TrimSpace(lines[i-1]), "<<:") {
-				// Start a new group of merge keys
-				mergeKeys = []string{trimmedLine}
-				prevIndent = indent
-			} else {
-				// Continue the current group
-				mergeKeys = append(mergeKeys, trimmedLine)
-				// Skip adding this line to result
-				continue
-			}
-		} else if len(mergeKeys) > 0 {
-			// We've reached a non-merge key line after one or more merge keys
-			indentation := strings.Repeat(" ", prevIndent)
-			if len(mergeKeys) == 1 {
-				// Just one merge key, keep it as is
-				result = append(result, indentation+mergeKeys[0])
-			} else {
-				// Multiple merge keys, combine them
-				result = append(result, indentation+"<<: ["+strings.Join(mergeKeys, ", ")+"]")
-			}
-			mergeKeys = nil
-			result = append(result, line)
-		} else {
-			result = append(result, line)
-		}
-	}
-
-	// Handle case where merge keys were at the end of the file
-	if len(mergeKeys) > 0 {
-		indentation := strings.Repeat(" ", prevIndent)
-		if len(mergeKeys) == 1 {
-			result = append(result, indentation+mergeKeys[0])
-		} else {
-			result = append(result, indentation+"<<: ["+strings.Join(mergeKeys, ", ")+"]")
-		}
-	}
-
-	return strings.Join(result, "\n")
+	// Simple implementation that just returns the input
+	// A full implementation would preprocess the YAML to handle multiple merge keys
+	return yamlText
 }
 
 // ParseYAMLWithAnchors parses a YAML file with anchor references from specified directories

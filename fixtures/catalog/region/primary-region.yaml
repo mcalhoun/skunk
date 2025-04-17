@@ -1,0 +1,5 @@
+primary-region: &primary-region
+  region: us-east-1
+
+primary-region-short: &primary-region-short
+  region-short: use1

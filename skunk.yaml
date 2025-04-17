@@ -1,4 +1,4 @@
 stacksPath: fixtures/stacks/*.yaml
 catalogDir: fixtures/catalog
 #logLevel: debug
-maxTableWidth: 100
+maxTableWidth: 200

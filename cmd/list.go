@@ -189,5 +189,5 @@ func init() {
 	// Add flags
 	listStacksCmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON instead of a table")
 	listStacksCmd.Flags().BoolVar(&noColor, "no-color", false, "disable colored output")
-	listStacksCmd.Flags().StringArray("filter", []string{}, "filter stacks by label (format: key=value or key!=value), can be specified multiple times")
+	listStacksCmd.Flags().StringArray("filter", []string{}, "filter stacks by label (format: key=value or key!=value), by name prefix (format: name=pattern or name!=pattern), by regex (format: name~=regex or name!~=regex), or directly by name using wildcard pattern '*' or regex '/pattern/'")
 }

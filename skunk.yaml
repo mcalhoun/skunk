@@ -1,4 +1,4 @@
-stacksPath: fixtures/stacks/*.yaml
-catalogDir: fixtures/catalog
+stacksPath: "fixtures/stacks/*.yaml"
+catalogDir: "fixtures/catalog"
 #logLevel: debug
-maxTableWidth: 200
+maxTableWidth: 100

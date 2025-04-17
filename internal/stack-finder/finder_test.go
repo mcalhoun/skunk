@@ -104,7 +104,7 @@ func TestFindStacks(t *testing.T) {
 }
 
 func createTestStackFile(t *testing.T, path, name string, labels map[string]string) {
-	yamlContent := `apiVersion: atmos.cloudposse.com/v1
+	yamlContent := `apiVersion: skunk.mattcalhoun.com/v1
 kind: Stack
 metadata:
   name: ` + name + `

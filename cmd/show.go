@@ -477,5 +477,5 @@ func init() {
 	showStackCmd.Flags().BoolVar(&jsonOutput, "json", false, "output as JSON instead of a table")
 	showStackCmd.Flags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	showStackCmd.Flags().BoolVar(&tfVars, "tfvars", false, "output component variables in Terraform format (only valid with --component)")
-	showStackCmd.Flags().StringArray("filter", []string{}, "filter stacks by label (format: key=value or key!=value), can be specified multiple times")
+	showStackCmd.Flags().StringArray("filter", []string{}, "filter stacks by label (format: key=value or key!=value), by name prefix (format: name=pattern or name!=pattern), by regex (format: name~=regex or name!~=regex), or directly by name using wildcard pattern '*' or regex '/pattern/'")
 }

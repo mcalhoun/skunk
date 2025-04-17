@@ -1,4 +1,4 @@
-apiVersion: atmos.cloudposse.com/v1
+apiVersion: skunk.mattcalhoun.com/v1
 kind: Stack
 metadata:
   name: plat-dev-secondary

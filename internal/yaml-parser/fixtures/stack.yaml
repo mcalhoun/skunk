@@ -1,0 +1,16 @@
+apiVersion: skunk/v1
+kind: Stack
+metadata:
+  name: test-stack
+spec:
+  components:
+    terraform:
+      vpc:
+        <<: *terraform-vpc
+        vars:
+          environment: dev
+    helm:
+      nginx:
+        <<: *helm-nginx
+        vars:
+          replicas: 2

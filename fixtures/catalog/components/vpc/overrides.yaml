@@ -1,3 +1,5 @@
 vpc-overrides: &vpc-overrides
   enabled: false
   name: dead-vpc
+  availability_zones:
+    - us-east-1d

@@ -1,0 +1,15 @@
+# Additional anchors for complex nested structure test
+base1: &base1
+  base_key1: base_value1
+
+base2: &base2
+  base_key2: base_value2
+
+adv1: &adv1
+  adv_key: adv_value
+
+settings1: &settings1
+  settings_key1: settings_value1
+
+settings2: &settings2
+  settings_key2: settings_value2

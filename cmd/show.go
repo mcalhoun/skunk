@@ -5,18 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/goccy/go-yaml"
 	"github.com/mcalhoun/skunk/internal/logger"
 	stackfinder "github.com/mcalhoun/skunk/internal/stack-finder"
+	tablerender "github.com/mcalhoun/skunk/internal/table-render"
 	"github.com/mcalhoun/skunk/internal/utils"
-	"github.com/mcalhoun/skunk/pkg/yamlparser"
+	yamlparser "github.com/mcalhoun/skunk/internal/yaml-parser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -40,6 +38,9 @@ type Component struct {
 	Name string `json:"name"`
 }
 
+// Global finder for use in production code
+var defaultStackFinder StackFinder = NewDefaultStackFinder()
+
 // showCmd represents the show command
 var showCmd = &cobra.Command{
 	Use:   "show",
@@ -53,154 +54,167 @@ var showStackCmd = &cobra.Command{
 	Short: "Show stack components",
 	Long:  `Show detailed information about components in a specific stack.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Get filters from flags
-		filters, _ := cmd.Flags().GetStringArray("filter")
+		runShowStackCmd(cmd, args, defaultStackFinder)
+	},
+}
 
-		if stackName == "" && len(filters) == 0 {
-			logger.Log.Fatalf("Error: either stack name or filter is required. Use --stackName/-s or --filter")
+// runShowStackCmd is the implementation of the show stack command logic
+// extracted to a separate function to make it testable with a mock stack finder
+func runShowStackCmd(cmd *cobra.Command, args []string, finder StackFinder) {
+	// Get filters from flags
+	filters, err := cmd.Flags().GetStringArray("filter")
+	if err != nil {
+		logger.Log.Fatalf("Error getting filters: %v", err)
+	}
+
+	if stackName == "" && len(filters) == 0 {
+		logger.Log.Fatalf("Error: either stack name or filter is required. Use --stackName/-s or --filter")
+	}
+
+	// Validate that --tfvars is only used with --component
+	if tfVars && componentName == "" {
+		logger.Log.Fatalf("Error: --tfvars can only be used with --component")
+	}
+
+	// Get stacksPath from config
+	stacksPath := viper.GetString("stacksPath")
+	if stacksPath == "" {
+		logger.Log.Fatalf("Error: stacksPath not defined in config")
+	}
+
+	// Find all stacks
+	stacks, err := finder.FindStacks(stacksPath)
+	if err != nil {
+		logger.Log.Fatalf("Error finding stacks: %v", err)
+	}
+
+	// Check for duplicate stack names
+	duplicates := utils.FindDuplicateStacks(stacks)
+	if len(duplicates) > 0 {
+		for stackName, stackFiles := range duplicates {
+			filesWithBrackets := "[" + strings.Join(stackFiles, ", ") + "]"
+			logger.Log.Error("duplicate stack detected",
+				"stack", stackName,
+				"error", "Stacks must have unique names",
+				"files_count", len(stackFiles),
+				"files", filesWithBrackets)
 		}
+		os.Exit(1)
+	}
 
-		// Validate that --tfvars is only used with --component
-		if tfVars && componentName == "" {
-			logger.Log.Fatalf("Error: --tfvars can only be used with --component")
+	// Apply filters if any are specified
+	if len(filters) > 0 {
+		stacks = utils.FilterStacks(stacks, filters)
+		if len(stacks) == 0 {
+			logger.Log.Info("No stacks match the specified filters")
+			return
 		}
+	}
 
-		// Get stacksPath from config
-		stacksPath := viper.GetString("stacksPath")
-		if stacksPath == "" {
-			logger.Log.Fatalf("Error: stacksPath not defined in config")
-		}
+	var targetStack *stackfinder.StackMetadata
 
-		// Find all stacks
-		stacks, err := stackfinder.FindStacks(stacksPath)
-		if err != nil {
-			logger.Log.Fatalf("Error finding stacks: %v", err)
-		}
-
-		// Check for duplicate stack names
-		duplicates := utils.FindDuplicateStacks(stacks)
-		if len(duplicates) > 0 {
-			for stackName, stackFiles := range duplicates {
-				filesWithBrackets := "[" + strings.Join(stackFiles, ", ") + "]"
-				logger.Log.Error("duplicate stack detected",
-					"stack", stackName,
-					"error", "Stacks must have unique names",
-					"files_count", len(stackFiles),
-					"files", filesWithBrackets)
+	// If filters are used without stackName, use the first matching stack
+	if stackName == "" && len(stacks) > 0 {
+		targetStack = &stacks[0]
+		// Update stackName with the selected stack's name
+		stackName = targetStack.Name
+		// Inform the user which stack was selected
+		logger.Log.Infof("Selected stack '%s' based on filter criteria", targetStack.Name)
+	} else {
+		// Find the stack by name
+		for i, stack := range stacks {
+			if stack.Name == stackName {
+				targetStack = &stacks[i]
+				break
 			}
-			os.Exit(1)
 		}
+	}
 
-		// Apply filters if any are specified
-		if len(filters) > 0 {
-			stacks = utils.FilterStacks(stacks, filters)
-			if len(stacks) == 0 {
-				logger.Log.Info("No stacks match the specified filters")
-				return
-			}
-		}
-
-		var targetStack *stackfinder.StackMetadata
-
-		// If filters are used without stackName, use the first matching stack
-		if stackName == "" && len(stacks) > 0 {
-			targetStack = &stacks[0]
-			// Inform the user which stack was selected
-			logger.Log.Infof("Selected stack '%s' based on filter criteria", targetStack.Name)
+	if targetStack == nil {
+		if stackName != "" {
+			logger.Log.Fatalf("Error: stack with name '%s' not found", stackName)
 		} else {
-			// Find the stack by name
-			for i, stack := range stacks {
-				if stack.Name == stackName {
-					targetStack = &stacks[i]
-					break
-				}
+			logger.Log.Fatal("Error: no matching stack found")
+		}
+		return
+	}
+
+	// Parse the YAML file to extract components
+	components, err := extractComponents(targetStack.FilePath)
+	if err != nil {
+		logger.Log.Fatalf("Error extracting components: %v", err)
+	}
+
+	if len(components) == 0 {
+		logger.Log.Infof("No components found in stack '%s'", targetStack.Name)
+		return
+	}
+
+	// If a specific component is requested, show its variables
+	if componentName != "" {
+		// Find the component
+		var foundComponent *Component
+		for i, comp := range components {
+			if comp.Name == componentName {
+				foundComponent = &components[i]
+				break
 			}
 		}
 
-		if targetStack == nil {
-			if stackName != "" {
-				logger.Log.Fatalf("Error: stack with name '%s' not found", stackName)
-			} else {
-				logger.Log.Fatal("Error: no matching stack found")
-			}
+		if foundComponent == nil {
+			logger.Log.Fatalf("Error: component with name '%s' not found in stack '%s'", componentName, stackName)
+			return
 		}
 
-		// Parse the YAML file to extract components
-		components, err := extractComponents(targetStack.FilePath)
+		// Extract component variables
+		vars, err := extractComponentVars(targetStack.FilePath, foundComponent.Type, foundComponent.Name)
 		if err != nil {
-			logger.Log.Fatalf("Error extracting components: %v", err)
+			logger.Log.Fatalf("Error extracting component variables: %v", err)
 		}
 
-		if len(components) == 0 {
-			logger.Log.Infof("No components found in stack '%s'", targetStack.Name)
+		if len(vars) == 0 {
+			logger.Log.Infof("No variables found for component '%s' in stack '%s'", componentName, stackName)
 			return
 		}
 
-		// If a specific component is requested, show its variables
-		if componentName != "" {
-			// Find the component
-			var foundComponent *Component
-			for i, comp := range components {
-				if comp.Name == componentName {
-					foundComponent = &components[i]
-					break
-				}
-			}
-
-			if foundComponent == nil {
-				logger.Log.Fatalf("Error: component with name '%s' not found in stack '%s'", componentName, stackName)
-			}
-
-			// Extract component variables
-			vars, err := extractComponentVars(targetStack.FilePath, foundComponent.Type, foundComponent.Name)
-			if err != nil {
-				logger.Log.Fatalf("Error extracting component variables: %v", err)
-			}
-
-			if len(vars) == 0 {
-				logger.Log.Infof("No variables found for component '%s' in stack '%s'", componentName, stackName)
-				return
-			}
-
-			// If tfvars output is requested, output in Terraform format
-			if tfVars {
-				outputTerraformVars(vars, filepath.Base(targetStack.FilePath), componentName)
-				return
-			}
-
-			// If JSON output is requested, print as JSON and exit
-			if jsonOutput {
-				outputComponentVarsJSON(vars)
-				return
-			}
-
-			// If no-color is specified, use the plain table format
-			if noColor {
-				printComponentVarsStandardTable(vars, foundComponent)
-				return
-			}
-
-			// Otherwise, print pretty table output
-			printComponentVarsBubblesTable(vars, foundComponent)
+		// If tfvars output is requested, output in Terraform format
+		if tfVars {
+			outputTerraformVars(vars, filepath.Base(targetStack.FilePath), componentName)
 			return
 		}
 
-		// If no specific component is requested, show all components
 		// If JSON output is requested, print as JSON and exit
 		if jsonOutput {
-			outputComponentsJSON(components)
+			outputComponentVarsJSON(vars)
 			return
 		}
 
 		// If no-color is specified, use the plain table format
 		if noColor {
-			printComponentsStandardTable(components)
+			printComponentVarsStandardTable(stackName, vars, foundComponent)
 			return
 		}
 
-		// Otherwise, print pretty table output with the bubbles table component
-		printComponentsBubblesTable(components)
-	},
+		// Otherwise, print pretty table output
+		printComponentVarsBubblesTable(targetStack.Name, vars, foundComponent)
+		return
+	}
+
+	// If no specific component is requested, show all components
+	// If JSON output is requested, print as JSON and exit
+	if jsonOutput {
+		outputComponentsJSON(components)
+		return
+	}
+
+	// If no-color is specified, use the plain table format
+	if noColor {
+		printComponentsStandardTable(stackName, components)
+		return
+	}
+
+	// Otherwise, print pretty table output with the bubbles table component
+	printComponentsBubblesTable(stackName, components)
 }
 
 // extractComponents extracts components from a stack YAML file
@@ -330,223 +344,91 @@ func outputComponentVarsJSON(vars []ComponentVar) {
 	fmt.Println(string(jsonData))
 }
 
-// printComponentsBubblesTable prints components using the Bubbles table component
-func printComponentsBubblesTable(components []Component) {
-	// Print the title
-	title := titleStyle.Render("COMPONENTS")
-	fmt.Println(title)
-
-	// Define table columns
-	columns := []table.Column{
-		{Title: "TYPE", Width: 30},
-		{Title: "NAME", Width: 50},
-	}
-
-	// Prepare rows data
-	rows := []table.Row{}
+// printComponentsBubblesTable prints components using the tablerender package
+func printComponentsBubblesTable(stackName string, components []Component) {
+	// Convert components to rows
+	rows := make([][]string, 0, len(components))
 	for _, component := range components {
-		rows = append(rows, table.Row{component.Type, component.Name})
+		rows = append(rows, []string{component.Type, component.Name})
 	}
 
-	// Create and configure the table
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(false),
-		table.WithHeight(len(rows)),
-	)
+	// Setup table style
+	style := tablerender.DefaultTableStyle()
+	style.Title = fmt.Sprintf("STACK: %s\nCOMPONENTS", stackName)
 
-	// Create a custom border style that matches the image
-	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(purple)
-
-	// Style the table
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(purple).
-		BorderBottom(true).
-		Bold(true).
-		Foreground(purple).
-		Align(lipgloss.Center).
-		Padding(0, 1)
-
-	s.Selected = s.Selected.
-		Foreground(lipgloss.NoColor{}).
-		Background(lipgloss.NoColor{}).
-		Bold(false)
-
-	s.Cell = s.Cell.
-		Foreground(gray)
-
-	// Apply styles
-	t.SetStyles(s)
-
-	// Wrap the table in a border
-	renderedTable := t.View()
-
-	// Apply outer border to match the image
-	finalTable := borderStyle.Render(renderedTable)
-
-	// Render the table
-	fmt.Println(finalTable)
+	// Render and print the table
+	table := tablerender.RenderTable([]string{"TYPE", "NAME"}, rows, style)
+	fmt.Println(table)
 }
 
-// printComponentsStandardTable prints components as a plain text table
-func printComponentsStandardTable(components []Component) {
+// printComponentsStandardTable prints a plain table of components
+func printComponentsStandardTable(stackName string, components []Component) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "STACK: %s\n", stackName)
+	fmt.Fprintf(w, "COMPONENT TYPE\tCOMPONENT NAME\n")
+	for _, c := range components {
+		fmt.Fprintf(w, "%s\t%s\n", c.Type, c.Name)
+	}
+	w.Flush()
+}
+
+// printComponentVarsBubblesTable prints component variables using the tablerender package
+func printComponentVarsBubblesTable(stackName string, vars []ComponentVar, component *Component) {
+	// Create a title based on component
+	title := fmt.Sprintf("STACK: %s\nCOMPONENT: %s/%s", stackName, component.Type, component.Name)
+
+	// Convert vars to a map for the table renderer
+	data := make(map[string]interface{}, len(vars))
+	for _, v := range vars {
+		data[v.Name] = v.Value
+	}
+
+	// Convert map to rows with colored values
+	colorScheme := tablerender.DefaultColorScheme()
+	rows := tablerender.FormatKeyValueDataWithColor(data, colorScheme)
+
+	// Sort rows by name for consistent output
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i][0] < rows[j][0]
+	})
+
+	// Setup table style
+	style := tablerender.DefaultTableStyle()
+	style.Title = title
+
+	// Render and print the table
+	table := tablerender.RenderTable([]string{"VARIABLE", "VALUE"}, rows, style)
+	fmt.Println(table)
+}
+
+// printComponentVarsStandardTable prints component variables as a plain text table
+func printComponentVarsStandardTable(stackName string, vars []ComponentVar, component *Component) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
-	fmt.Println("Stack Components")
+	fmt.Printf("Stack: %s\n", stackName)
+	fmt.Printf("Component: %s/%s\n", component.Type, component.Name)
 	fmt.Println()
-	fmt.Fprintln(w, "Type\tName")
-	fmt.Fprintln(w, "----\t----")
+	fmt.Fprintln(w, "Variable\tValue")
+	fmt.Fprintln(w, "--------\t-----")
 
-	for _, component := range components {
-		fmt.Fprintf(w, "%s\t%s\n", component.Type, component.Name)
+	for _, v := range vars {
+		// Convert value to string representation
+		valueStr := formatVariableValue(v.Value)
+		fmt.Fprintf(w, "%s\t%s\n", v.Name, valueStr)
 	}
 
 	w.Flush()
 }
 
-// printComponentVarsBubblesTable prints component variables using the Bubbles table component
-func printComponentVarsBubblesTable(vars []ComponentVar, component *Component) {
-	// Print the title
-	title := titleStyle.Render(fmt.Sprintf("COMPONENT: %s/%s", component.Type, component.Name))
-	fmt.Println(title)
-
-	// Define table columns
-	columns := []table.Column{
-		{Title: "VARIABLE", Width: 40},
-		{Title: "VALUE", Width: 50},
-	}
-
-	// Prepare rows data
-	rows := []table.Row{}
-	for _, v := range vars {
-		// Convert value to string representation with styling for complex types
-		valueStr := formatValueWithStyle(v.Value)
-		rows = append(rows, table.Row{v.Name, valueStr})
-	}
-
-	// Create and configure the table
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(false),
-		table.WithHeight(len(rows)),
-	)
-
-	// Create a custom border style that matches the image
-	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(purple)
-
-	// Style the table
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(purple).
-		BorderBottom(true).
-		Bold(true).
-		Foreground(purple).
-		Align(lipgloss.Center).
-		Padding(0, 1)
-
-	s.Selected = s.Selected.
-		Foreground(lipgloss.NoColor{}).
-		Background(lipgloss.NoColor{}).
-		Bold(false)
-
-	s.Cell = s.Cell.
-		Foreground(gray)
-
-	// Apply styles
-	t.SetStyles(s)
-
-	// Wrap the table in a border
-	renderedTable := t.View()
-
-	// Apply outer border to match the image
-	finalTable := borderStyle.Render(renderedTable)
-
-	// Render the table
-	fmt.Println(finalTable)
-}
-
-// formatValueWithStyle formats values with color for the styled table
-func formatValueWithStyle(value interface{}) string {
-	str := formatValue(value)
-
-	// For colored output, we can add specific styling for different types
-	v := reflect.ValueOf(value)
-	switch v.Kind() {
-	case reflect.Map, reflect.Slice, reflect.Array:
-		// Use a subtle color for complex structures
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("105")).Render(str)
-	case reflect.Bool:
-		// Highlight booleans
-		if v.Bool() {
-			return lipgloss.NewStyle().Foreground(lipgloss.Color("76")).Render(str) // Green for true
-		}
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(str) // Red for false
-	case reflect.String:
-		// Style strings
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("149")).Render(str)
-	default:
-		return str
-	}
-}
-
-// formatValue formats a value for display, handling maps and slices nicely
-func formatValue(value interface{}) string {
+// formatVariableValue formats a value as a string for plain text output
+func formatVariableValue(value interface{}) string {
 	if value == nil {
 		return "null"
 	}
 
-	// Check the type using reflection
-	v := reflect.ValueOf(value)
-	switch v.Kind() {
-	case reflect.Map:
-		// Format maps as key-value pairs
-		if v.Len() == 0 {
-			return "{}"
-		}
-
-		var pairs []string
-		iter := v.MapRange()
-		for iter.Next() {
-			key := iter.Key().String()
-			val := formatValue(iter.Value().Interface()) // Recursively format values
-			pairs = append(pairs, fmt.Sprintf("%s: %s", key, val))
-		}
-		// Sort for consistent output
-		sort.Strings(pairs)
-		return "{ " + strings.Join(pairs, ", ") + " }"
-
-	case reflect.Slice, reflect.Array:
-		// Format slices as comma-separated values
-		if v.Len() == 0 {
-			return "[]"
-		}
-
-		var items []string
-		for i := 0; i < v.Len(); i++ {
-			item := formatValue(v.Index(i).Interface()) // Recursively format values
-			items = append(items, item)
-		}
-		return "[ " + strings.Join(items, ", ") + " ]"
-
-	case reflect.String:
-		// Return strings without quotes for nicer display
-		return fmt.Sprintf("%s", value)
-
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		// Format simple values directly
-		return fmt.Sprintf("%v", value)
-
+	switch v := value.(type) {
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, string:
+		return fmt.Sprintf("%v", v)
 	default:
 		// For complex types, use JSON representation
 		jsonBytes, err := json.Marshal(value)
@@ -555,24 +437,6 @@ func formatValue(value interface{}) string {
 		}
 		return string(jsonBytes)
 	}
-}
-
-// printComponentVarsStandardTable prints component variables as a plain text table
-func printComponentVarsStandardTable(vars []ComponentVar, component *Component) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-
-	fmt.Printf("Component: %s/%s\n", component.Type, component.Name)
-	fmt.Println()
-	fmt.Fprintln(w, "Variable\tValue")
-	fmt.Fprintln(w, "--------\t-----")
-
-	for _, v := range vars {
-		// Convert value to string representation
-		valueStr := formatValue(v.Value)
-		fmt.Fprintf(w, "%s\t%s\n", v.Name, valueStr)
-	}
-
-	w.Flush()
 }
 
 // outputTerraformVars prints component variables in Terraform .tfvars format
@@ -581,68 +445,25 @@ func outputTerraformVars(vars []ComponentVar, stackFile string, componentName st
 	fmt.Printf("# Terraform variables for component '%s' from stack '%s'\n", componentName, stackFile)
 	fmt.Printf("# Generated by skunk\n\n")
 
-	// Print each variable in terraform format
+	// Use the tablerender package to format values
 	for _, v := range vars {
-		fmt.Printf("%s = %s\n", v.Name, formatTerraformValue(v.Value))
-	}
-}
-
-// formatTerraformValue formats a value for Terraform .tfvars format
-func formatTerraformValue(value interface{}) string {
-	if value == nil {
-		return "null"
-	}
-
-	// Check the type using reflection
-	v := reflect.ValueOf(value)
-	switch v.Kind() {
-	case reflect.Map:
-		// Format maps as Terraform objects
-		if v.Len() == 0 {
-			return "{}"
+		// Convert to appropriate Terraform syntax
+		valueStr := ""
+		switch v.Value.(type) {
+		case string:
+			valueStr = fmt.Sprintf("\"%v\"", v.Value)
+		case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+			valueStr = fmt.Sprintf("%v", v.Value)
+		default:
+			// Use JSON marshaling for complex types
+			jsonData, err := json.Marshal(v.Value)
+			if err != nil {
+				valueStr = fmt.Sprintf("%v", v.Value)
+			} else {
+				valueStr = string(jsonData)
+			}
 		}
-
-		var pairs []string
-		iter := v.MapRange()
-		for iter.Next() {
-			key := iter.Key().String()
-			val := formatTerraformValue(iter.Value().Interface()) // Recursively format values
-			pairs = append(pairs, fmt.Sprintf("%s = %s", key, val))
-		}
-		// Sort for consistent output
-		sort.Strings(pairs)
-		return "{\n  " + strings.Join(pairs, "\n  ") + "\n}"
-
-	case reflect.Slice, reflect.Array:
-		// Format slices as Terraform lists
-		if v.Len() == 0 {
-			return "[]"
-		}
-
-		var items []string
-		for i := 0; i < v.Len(); i++ {
-			item := formatTerraformValue(v.Index(i).Interface()) // Recursively format values
-			items = append(items, item)
-		}
-		return "[" + strings.Join(items, ", ") + "]"
-
-	case reflect.String:
-		// Strings must be quoted in Terraform
-		return fmt.Sprintf("\"%s\"", value)
-
-	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
-		reflect.Float32, reflect.Float64:
-		// Format simple values directly
-		return fmt.Sprintf("%v", value)
-
-	default:
-		// For complex types, use JSON representation
-		jsonBytes, err := json.Marshal(value)
-		if err != nil {
-			return fmt.Sprintf("%v", value) // Fallback to default formatting
-		}
-		return string(jsonBytes)
+		fmt.Printf("%s = %s\n", v.Name, valueStr)
 	}
 }
 

@@ -1,0 +1,4 @@
+root:
+  child:
+    <<: *test-anchor
+    key3: value3

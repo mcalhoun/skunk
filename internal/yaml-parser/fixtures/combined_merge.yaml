@@ -1,0 +1,10 @@
+# Test anchor definition
+test-anchor: &test-anchor
+  key1: value1
+  key2: value2
+
+# Root object that uses the anchor
+root:
+  child:
+    <<: *test-anchor
+    key3: value3

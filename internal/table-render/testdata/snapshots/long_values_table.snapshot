@@ -1,0 +1,10 @@
+                 
+LONG VALUES TABLE
+                 
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ NAME                              VALUE                                         │
+│─────────────────────────────────────────────────────────────────────────────────│
+│ short_name                        short value                                   │
+│ long_name_that_might_get_trunca…  This is a very long value that might get tru… │
+│ another_name                      Another normal value                          │
+└─────────────────────────────────────────────────────────────────────────────────┘

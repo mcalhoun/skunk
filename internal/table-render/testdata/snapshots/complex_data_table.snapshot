@@ -1,0 +1,11 @@
+                  
+COMPLEX DATA TABLE
+                  
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ PROPERTY                          VALUE                                         │
+│─────────────────────────────────────────────────────────────────────────────────│
+│ deeply_nested                     { level1: { level2: { level3: { final: very … │
+│ long_array                        [ item1, item2, item3, item4, item5, item6, … │
+│ nested_map                        { key1: value1, key2: 42, nested: { inner: v… │
+│ simple_string                     text                                          │
+└─────────────────────────────────────────────────────────────────────────────────┘

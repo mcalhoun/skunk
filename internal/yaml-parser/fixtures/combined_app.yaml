@@ -1,0 +1,21 @@
+# Anchor definitions
+common-settings: &common-settings
+  timeout: 30
+  retries: 3
+
+database: &database
+  host: localhost
+  port: 5432
+  credentials:
+    user: admin
+    password: password123
+
+# Application that uses the anchors
+application:
+  name: test-app
+  settings:
+    <<: *common-settings
+    debug: true
+  database:
+    <<: *database
+    database: testdb

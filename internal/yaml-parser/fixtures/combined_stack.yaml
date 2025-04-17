@@ -1,0 +1,30 @@
+# Stack component definitions
+terraform-vpc: &terraform-vpc
+  type: terraform
+  vars:
+    cidr_block: 10.0.0.0/16
+    enable_dns: true
+
+helm-nginx: &helm-nginx
+  type: helm
+  vars:
+    replicas: 3
+    version: 1.19
+
+# Stack definition
+apiVersion: skunk/v1
+kind: Stack
+metadata:
+  name: test-stack
+spec:
+  components:
+    terraform:
+      vpc:
+        <<: *terraform-vpc
+        vars:
+          environment: dev
+    helm:
+      nginx:
+        <<: *helm-nginx
+        vars:
+          replicas: 2

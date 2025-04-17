@@ -1,0 +1,34 @@
+# Test case for multiple merge keys - using valid YAML
+vars:
+  # Each merge key appears only once in actual YAML
+  # Our preprocessor will combine these
+  <<: *defaults1
+  name:
+    <<: *nested1
+    key: value
+
+# Second test with different merge keys
+vars2:
+  <<: *defaults2
+  name2:
+    <<: *nested2
+    key2: value2
+
+# Test case for complex nested structure - using valid YAML
+config:
+  base:
+    <<: *base1
+  advanced:
+    <<: *adv1
+    settings:
+      <<: *settings1
+      option: value
+
+# Additional sections with other merge keys for testing
+config2:
+  base2:
+    <<: *base2
+  advanced2:
+    settings2:
+      <<: *settings2
+      option2: value2

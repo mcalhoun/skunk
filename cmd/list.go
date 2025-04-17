@@ -8,37 +8,15 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mcalhoun/skunk/internal/logger"
 	stackfinder "github.com/mcalhoun/skunk/internal/stack-finder"
+	tablerender "github.com/mcalhoun/skunk/internal/table-render"
 	"github.com/mcalhoun/skunk/internal/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
-	// Color definitions
-	purple   = lipgloss.Color("99")  // Bright purple for headers and borders
-	gray     = lipgloss.Color("245") // Light gray for text
-	darkGray = lipgloss.Color("236") // Dark background
-
-	// Style definitions for table
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(purple).
-			MarginBottom(1).
-			MarginTop(1)
-
-	headerStyle = lipgloss.NewStyle().
-			Foreground(purple).
-			Bold(true).
-			Align(lipgloss.Center)
-
-	cellStyle    = lipgloss.NewStyle().Padding(0, 1).Width(14)
-	oddRowStyle  = cellStyle.Copy().Foreground(gray)
-	evenRowStyle = cellStyle.Copy().Foreground(gray)
-
 	// Command flags
 	jsonOutput bool
 	noColor    bool
@@ -58,7 +36,10 @@ var listStacksCmd = &cobra.Command{
 	Long:  `List all stacks that match the configured stacksPath glob pattern.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Get filters from flags
-		filters, _ := cmd.Flags().GetStringArray("filter")
+		filters, err := cmd.Flags().GetStringArray("filter")
+		if err != nil {
+			logger.Log.Fatalf("Error getting filters: %v", err)
+		}
 
 		// Get stacksPath from config
 		stacksPath := viper.GetString("stacksPath")
@@ -112,7 +93,7 @@ var listStacksCmd = &cobra.Command{
 			return
 		}
 
-		// Otherwise, print pretty table output with the bubbles table component
+		// Otherwise, print pretty table output with the tablerender package
 		printBubblesTable(stacks)
 	},
 }
@@ -152,20 +133,10 @@ func outputJSON(stacks []stackfinder.StackMetadata) {
 	fmt.Println(string(jsonData))
 }
 
-// printBubblesTable prints the stacks using the Bubbles table component
+// printBubblesTable prints the stacks using the tablerender package
 func printBubblesTable(stacks []stackfinder.StackMetadata) {
-	// Print the title
-	title := titleStyle.Render("STACKS")
-	fmt.Println(title)
-
-	// Define table columns
-	columns := []table.Column{
-		{Title: "NAME", Width: 30},
-		{Title: "PATH", Width: 50},
-	}
-
-	// Prepare rows data
-	rows := []table.Row{}
+	// Convert stacks to rows
+	rows := make([][]string, 0, len(stacks))
 	for _, stack := range stacks {
 		// Get the relative path for display
 		relPath := stack.FilePath
@@ -175,52 +146,16 @@ func printBubblesTable(stacks []stackfinder.StackMetadata) {
 			}
 		}
 
-		rows = append(rows, table.Row{stack.Name, relPath})
+		rows = append(rows, []string{stack.Name, relPath})
 	}
 
-	// Create and configure the table
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(false),
-		table.WithHeight(len(rows)),
-	)
+	// Setup table style
+	style := tablerender.DefaultTableStyle()
+	style.Title = "STACKS"
 
-	// Create a custom border style that matches the image
-	borderStyle := lipgloss.NewStyle().
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(purple)
-
-	// Style the table
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(purple).
-		BorderBottom(true).
-		Bold(true).
-		Foreground(purple).
-		Align(lipgloss.Center).
-		Padding(0, 1)
-
-	s.Selected = s.Selected.
-		Foreground(lipgloss.NoColor{}).
-		Background(lipgloss.NoColor{}).
-		Bold(false)
-
-	s.Cell = s.Cell.
-		Foreground(gray)
-
-	// Apply styles
-	t.SetStyles(s)
-
-	// Wrap the table in a border
-	renderedTable := t.View()
-
-	// Apply outer border to match the image
-	finalTable := borderStyle.Render(renderedTable)
-
-	// Render the table
-	fmt.Println(finalTable)
+	// Render and print the table
+	table := tablerender.RenderTable([]string{"NAME", "PATH"}, rows, style)
+	fmt.Println(table)
 }
 
 // printStandardTable prints the stacks as a plain text table without any styling

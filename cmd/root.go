@@ -83,6 +83,7 @@ func initConfig() {
 	viper.SetDefault("stacksPath", "fixtures/stacks/*.yaml")
 	viper.SetDefault("catalogDir", "fixtures/catalog")
 	viper.SetDefault("logLevel", "info")
+	viper.SetDefault("maxTableWidth", 80)
 
 	// Read environment variables
 	viper.AutomaticEnv()

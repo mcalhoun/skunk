@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/charmbracelet/lipgloss"
@@ -56,9 +57,12 @@ func SetLevel(level string) {
 	}
 }
 
-// Init initializes the logger with the specified settings
+// Init initializes the logger with the specified settings and prints a blank line
+// to separate logger output from previous content
 func Init() {
 	// Default settings are already configured in the Log variable declaration
+	// Print a blank line to separate logger output
+	fmt.Fprintln(os.Stderr)
 }
 
 // ErrorStyled logs an error message with custom styling

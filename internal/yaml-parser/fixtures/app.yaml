@@ -1,0 +1,8 @@
+application:
+  name: test-app
+  settings:
+    <<: *common-settings
+    debug: true
+  database:
+    <<: *database
+    database: testdb

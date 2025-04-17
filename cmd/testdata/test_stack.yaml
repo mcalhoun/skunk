@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Stack
+metadata:
+  name: test-stack
+  labels:
+    env: test
+    region: us-test-1
+spec:
+  components:
+    terraform:
+      vpc:
+        vars:
+          cidr_block: "10.0.0.0/16"
+          enable_dns: true
+          tags:
+            Name: "test-vpc"
+            Environment: "test"
+      database:
+        vars:
+          engine: "postgres"
+          instance_class: "db.t3.micro"
+          storage_gb: 20
+          multi_az: false
+    helm:
+      nginx:
+        vars:
+          namespace: "web"
+          version: "1.0.0"
+          replicas: 3

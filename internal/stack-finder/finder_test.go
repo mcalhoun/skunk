@@ -27,8 +27,8 @@ func TestFindStacks(t *testing.T) {
 
 	// Create a non-YAML file
 	nonYAMLFile := filepath.Join(tmpDir, "not-yaml.txt")
-	if err := os.WriteFile(nonYAMLFile, []byte("not a YAML file"), 0644); err != nil {
-		t.Fatalf("Failed to write non-YAML file: %v", err)
+	if err := os.WriteFile(nonYAMLFile, []byte("not a YAML file"), 0600); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
 	}
 
 	// Test FindStacks with a glob pattern
@@ -114,8 +114,8 @@ metadata:
 		yamlContent += "    " + k + ": " + v + "\n"
 	}
 
-	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write stack file %s: %v", path, err)
+	if err := os.WriteFile(path, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
 	}
 }
 
@@ -125,7 +125,7 @@ kind: Deployment
 metadata:
   name: sample-deployment
 `
-	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
-		t.Fatalf("Failed to write non-stack file: %v", err)
+	if err := os.WriteFile(path, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
 	}
 }

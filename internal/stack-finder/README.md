@@ -51,7 +51,7 @@ func main() {
 	}
 
 	// Example 3: Getting stacks with specific labels
-	fmt.Println("\nStacks in prod environment:")
+	fmt.Println("\nStacks in prod env:")
 	for _, stack := range recursiveStacks {
 		if stack.Labels["environment"] == "prod" {
 			fmt.Printf("- %s (in %s)\n", stack.Name, filepath.Base(stack.FilePath))

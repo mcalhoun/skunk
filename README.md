@@ -182,4 +182,4 @@ func main() {
 
 ## License
 
-MIT
+See [LICENSE](./license.MD)
